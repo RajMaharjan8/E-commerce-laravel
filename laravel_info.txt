@@ -1,0 +1,255 @@
+laravel 
+
+
+-----------------------------------------------
+<!doctype html>
+<html lang="en">
+  <head>
+  </head>
+  <body>
+    {{View::make('nameOfFile')}}
+    @yield('content')
+    {{View::make('footer')}}
+  </body>
+<style>
+  .custom-login{
+    height: 500px;
+    padding-top: 100px; 
+  }
+</style>
+</html>
+----------------------------------------------
+@extends('master')
+@section('content')    
+<h1>this is the body</h1>
+@endsection
+--------------------web.php--------------------------
+
+Route::get('', function(){
+    return View('login');
+});
+------------------------------------------------
+php artisan make:migration create_users_table
+
+ public function up(): void
+    {
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('email')->unique();
+            $table->string('password');
+            $table->timestamps();
+        });
+    }
+-----------------------------------------------
+php artisan make:seeder User_Seeder
+// {Seeder is used for entering data}
+
+ public function run(): void
+    {
+        DB::table('users')->insert([
+            'name'=>'Raj Maharjan',
+            'email'=>'rajm48952@gmail.com',
+            'password'=> Hash::make('blondehairmessi10')
+        ]);
+    }
+
+php artisan db:seed --class=User_Seeder
+
+-----------------------CONTROLLER---------------------------
+php artisan make:controller UserController
+
+------in UserController----
+class UserController extends Controller
+{
+    function login(Request $req){
+        $user = User::where(['email'=>$req->email])->first();
+        if($user || Hash::check($req->password, $user->password)){
+            $req->session()->put('user',$user);
+            return redirect('/');
+           
+        }else{
+            return response()->json([
+                'message'=>'Email and password doesnt match'
+            ]);
+        }
+    }
+}
+
+Route::post('/login',[UserController::class, 'login']);
+
+-----and in loginpage--------
+<form action="/login" method="POST">
+                @csrf
+        
+                    <input type="email" name ="email">
+                    <input type="password" name="password">
+                </div>
+                <button type="submit" class="btn btn-primary">Login</button>
+            </form>
+------------------------------------------------------------------------------------
+----------------------------MIDDLEWERE--------------------------------------------
+Middleware is generally used for userauthentication making sure that user cannot go back to login page onced logged in
+
+php artisan make:middleware UserAuth
+
+then add this in Kernel.php
+  protected $middleware = [
+        // \App\Http\Middleware\TrustHosts::class,
+        \App\Http\Middleware\TrustProxies::class,
+        \Illuminate\Http\Middleware\HandleCors::class,
+        \App\Http\Middleware\PreventRequestsDuringMaintenance::class,
+        \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
+	[add this->]\Illuminate\Session\Middleware\StartSession::class,
+        \App\Http\Middleware\TrimStrings::class,
+        \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
+        [add this->] \App\Http\Middleware\UserAuth::class,
+    ];
+
+then in UserAuth
+ public function handle(Request $request, Closure $next): Response
+    {
+        if($request->path()=="login" && $request->session()->has('user')){
+            return redirect('/');
+        }
+        return $next($request);
+    }
+
+note:     The middleware checks if the path of the incoming request is "login" ($request->path()=="login"). Additionally, it checks if a user is already authenticated (logged in) by verifying the presence of a 'user' in the session ($request->session()->has('user')).
+
+
+---------------------MODEL----------------------------
+ php artisan make:model Product
+
+then in product controller
+
+class ProductController extends Controller
+{
+    //
+    function index(){
+        $data = Product::all();
+        //sending data to product webpage
+
+
+        //in this 'product' is the name of the web file
+        //and 'products' is a variable name
+        return view('product',['products'=>$data]);
+    }
+}
+
+this is to send the data to the webpage
+
+and this is the webpage code where we used foreach for representing the products
+@extends('master')
+@section('content')    
+
+<div class="container custom-product">
+    <div class="row">
+      @foreach ($products as $product)
+      <div class="card" style="width: 18rem;">
+        <img src="{{$product['gallery']}}" class="card-img-top" alt="Product Image" style="height: 200px; object-fit: cover;">
+        <div class="card-body">
+          <h5 class="card-title">{{$product['name']}}</h5>
+          <p class="card-text">{{$product['description']}}</p>
+          <a href="#" class="btn btn-primary">View</a>
+        </div>
+      </div>
+      @endforeach
+     
+    </div>
+</div>
+
+@endsection
+---------------------------SEARCH FILTERING--------------------------
+Route::get('/search',[ProductController::class,'search']);
+
+public function search(Request $req){
+        // 'like', '%' is used for matching the input query. even if the user fails to enter the whole item name correctly
+        $data = Product::where('name','like','%'. $req->input('query').'%')->get();
+        // $search = $req->input();
+        return view('search',[
+            'products'=>$data,
+        ]);
+    }
+}
+
+<form class="d-flex" role="search" action="/search" method="GET">
+          <input class="form-control me-2" name="query" type="search" placeholder="Search" aria-label="Search">
+          <button class="btn btn-outline-success" type="submit">Search</button>
+</form>
+--------------------------ADDING FOREIGN KEY------------------------------
+  public function up()
+    {
+        Schema::create('cart', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('product_id');
+            $table->unsignedBigInteger('user_id');
+            $table->timestamps();
+
+            // Adding foreign key constraints with onDelete('cascade')
+            $table->foreign('product_id')->references('id')->on('products')->onDelete('cascade');
+            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+        });
+    }
+
+---------add to cart-----------
+<form action="" method="">
+            @csrf
+            <input type="text" name="product_id" value="{{$details['id']}}" hidden>
+            <button class="btn btn-success"> Add to cart</button>
+ </form>
+
+
+php artisan make:model Cart
+
+
+in Cart Model
+class Cart extends Model
+{
+    use HasFactory;
+    public $table='cart';
+}
+
+
+public function add_to_cart(Request $req){
+        if($req->session()->has('user')){
+            $cart = new Cart;
+            $cart->user_id = $req->session()->get('user')['id'];
+            $cart->product_id = $req->product_id;
+            //product_id is the name of the input field we defined
+            $cart->save();
+            return redirect('/home');
+            
+
+        } else{
+            return redirect("/login");
+        }
+    }
+
+
+this is form is from details.php where the detail of a particular product is present
+<form action="/add-to-cart" method="POST">
+            @csrf
+            <input type="text" name="product_id" value="{{$details['id']}}" hidden>
+            <button class="btn btn-success"> Add to cart</button>
+</form>
+--------------------------FOR JOINING TWO TABLES---------------------
+public static function cartdetail()
+    {
+        $user = Session::get('user')['id'];
+
+        //joining cart table and products table to fetch the data
+        $products = DB::table('cart')
+        ->join('products','cart.product_id','=','products.id')
+        ->where('cart.user_id',$user)
+        ->select('products.*','cart.id as cart_id')
+        ->get()
+        ;
+
+        if ($user) {
+            // Assuming there's a 'user_id' column in your Cart table
+            return view('cartdetail',['products'=>$products]);
+        } else {
+            return 'User not authenticated';
+        }
+    }
